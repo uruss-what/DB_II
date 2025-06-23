@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: dbii_postgres
+    environment:
+      POSTGRES_DB: dbii
+      POSTGRES_USER: dbii_user
+      POSTGRES_PASSWORD: dbii_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    networks:
+      - dbii_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbii_user -d dbii"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: dbii_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@dbii.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - dbii_network
+
+  migrate:
+    image: migrate/migrate:latest
+    volumes:
+      - ./migrations:/migrations
+    command: ["-path", "/migrations", "-database", "postgres://dbii_user:dbii_password@postgres:5432/dbii?sslmode=disable", "up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dbii_network
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dbii_server
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: dbii_user
+      DB_PASSWORD: dbii_password
+      DB_NAME: dbii
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dbii_network
+
+networks:
+  dbii_network:
+    driver: bridge
+
+volumes:
+  postgres_data: 
